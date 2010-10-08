@@ -1,0 +1,19 @@
+======================================================================
+Python FlickrAPI
+======================================================================
+
+Most of the info can be found in the 'doc' directory or on
+http://flickrapi.sourceforge.net/
+
+To install the Python Flickr API module, run::
+
+    python setup.py install
+
+To run the unittests, install nose and pymock first using::
+    
+    easy_install nose
+    easy_install pymock
+
+then run ``nosetest`` in the top-level directory.
+
+Packaging requires ``easy_install setuptools-hg``
