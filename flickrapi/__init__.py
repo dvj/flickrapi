@@ -56,7 +56,7 @@ USE_APP_ENGINE = False
 try:
     from google.appengine.api import urlfetch
     USE_APP_ENGINE = True
-except:
+except ImportError:
     #we aren't
     import urllib2
 
@@ -164,7 +164,7 @@ class FlickrAPI(object):
 
     def __init__(self, api_key, secret=None, username=None,
             token=None, format='etree', store_token=True,
-            cache=False):
+            cache=False, async=False):
         """Construct a new FlickrAPI instance for a given API key
         and secret.
         
@@ -205,7 +205,8 @@ class FlickrAPI(object):
         self.api_key = api_key
         self.secret = secret
         self.default_format = format
-        
+        self.async = async
+
         self.__handler_cache = {}
 
         if token:
@@ -352,10 +353,7 @@ class FlickrAPI(object):
                         'format': self.default_format}
 
             args = self.__supply_defaults(args, defaults)
-
-            #if USE_APP_ENGINE:
-            #    return self.__flickr_call(**args)
-            #else:
+            LOG.debug(args)
             return self.__wrap_in_parser(self.__flickr_call,
                     parse_format=args['format'], **args)
 
@@ -400,6 +398,9 @@ class FlickrAPI(object):
             data = self.__flickr_call(method='flickr.photos.getInfo',
                 photo_id='123', format='rest')
         '''
+        perform_async = self.async
+        if kwargs.has_key("async"):
+            perform_async = kwargs.pop("async")
 
         LOG.debug("Calling %s" % kwargs)
 
@@ -410,16 +411,24 @@ class FlickrAPI(object):
             return self.cache.get(post_data)
 
         url = "http://" + self.flickr_host + self.flickr_rest_form
-
         if USE_APP_ENGINE:
             rpc = urlfetch.create_rpc()
             urlfetch.make_fetch_call(rpc,url, payload=post_data, method='POST')
             reply = {}
             reply['rpc'] = rpc
             reply['post_data'] = post_data
+            if perform_async:
+                #use RPC
+                return reply
+            else:
+                #dont use RPC, so return immediately
+                return self.complete_fetch(reply)
         else:
             flicksocket =urllib2.urlopen(url, post_data)
-            reply = flicksocket.read()
+            try:
+                reply = flicksocket.read()
+            except URLError:
+                return None
             flicksocket.close()
             # Store in cache, if we have one
             if self.cache is not None:
@@ -428,7 +437,7 @@ class FlickrAPI(object):
         return reply
     
 
-    def completeFetch(self, rpc):
+    def complete_fetch(self, rpc):
         '''Get the result of an asynchronous request.
 
         The procedure will return the results of the api call is successful, or
@@ -440,16 +449,16 @@ class FlickrAPI(object):
            and 'post_data', which is the data associated with the api call.
            '''
 
-
 	# Return value from cache if available
         if self.cache and self.cache.get(rpc['post_data']):
             return self.cache.get(rpc['post_data'])
         try:
             result = rpc['rpc'].get_result()
-            if result.status_code != 200:
-                return None #TODO: better error handling
         except:
             return None
+        if result.status_code != 200:
+            return None #TODO: better error handling
+
 	# Store in cache, if we have one
         if self.cache is not None:
             self.cache.set(rpc['post_data'], result.content)
